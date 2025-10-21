@@ -564,7 +564,13 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 
 	formatDate(date, format) {
 		if (!date) return '';
-		
+
+		// Use Obsidian's built-in moment.js for full format token support
+		if (window.moment) {
+			return window.moment(date).format(format);
+		}
+
+		// Fallback to basic implementation if moment is unavailable
 		const d = new Date(date);
 		const year = d.getFullYear();
 		const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -572,7 +578,7 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 		const hours = String(d.getHours()).padStart(2, '0');
 		const minutes = String(d.getMinutes()).padStart(2, '0');
 		const seconds = String(d.getSeconds()).padStart(2, '0');
-		
+
 		return format
 			.replace(/YYYY/g, year)
 			.replace(/YY/g, String(year).slice(-2))
