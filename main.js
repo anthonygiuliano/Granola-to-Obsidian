@@ -754,19 +754,24 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 
 	getAllMarkdownFilesInFolder(folder) {
 		const files = [];
-		
+
 		// Safety check - ensure folder exists
 		if (!folder) {
 			return files;
 		}
-		
-		// Use Vault.recurseChildren to get all markdown files in folder and subfolders
-		this.app.vault.recurseChildren(folder, (file) => {
-			if (file instanceof obsidian.TFile && file.extension === 'md') {
-				files.push(file);
+
+		// Recursively get all markdown files in folder and subfolders
+		const traverse = (currentFolder) => {
+			for (const child of currentFolder.children) {
+				if (child instanceof obsidian.TFile && child.extension === 'md') {
+					files.push(child);
+				} else if (child instanceof obsidian.TFolder) {
+					traverse(child);
+				}
 			}
-		});
-		
+		};
+
+		traverse(folder);
 		return files;
 	}
 
