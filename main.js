@@ -22,8 +22,10 @@ const DEFAULT_SETTINGS = {
 	autoSyncFrequency: 300000,
 	enableDailyNoteIntegration: false,
 	dailyNoteSectionName: '## Granola Meetings',
+	dailyNotePath: '', // Optional: specify exact path pattern to daily notes using moment.js tokens
 	enablePeriodicNoteIntegration: false,
 	periodicNoteSectionName: '## Granola Meetings',
+	periodicNotePath: '', // Optional: specify exact path pattern to periodic notes using moment.js tokens
 	skipExistingNotes: false,
 	includeAttendeeTags: false,
 	excludeMyNameFromTags: true,
@@ -587,6 +589,68 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 			.replace(/HH/g, hours)
 			.replace(/mm/g, minutes)
 			.replace(/ss/g, seconds);
+	}
+
+	resolveDailyNotePath(date) {
+		if (!this.settings.dailyNotePath || this.settings.dailyNotePath.trim() === '') {
+			return null; // Signal to use fallback
+		}
+
+		if (!window.moment) {
+			console.error('Granola Sync: moment.js not available for date formatting');
+			return null;
+		}
+
+		try {
+			// Replace {{token}} or {token} patterns with moment.js formatting
+			let path = this.settings.dailyNotePath;
+			const tokenPattern = /\{\{?([^}]+)\}\}?/g;
+
+			path = path.replace(tokenPattern, (match, token) => {
+				return window.moment(date).format(token);
+			});
+
+			// Ensure .md extension
+			if (!path.endsWith('.md')) {
+				path += '.md';
+			}
+
+			return path;
+		} catch (error) {
+			console.error('Error resolving daily note path pattern:', error);
+			return null;
+		}
+	}
+
+	resolvePeriodicNotePath(date) {
+		if (!this.settings.periodicNotePath || this.settings.periodicNotePath.trim() === '') {
+			return null; // Signal to use fallback
+		}
+
+		if (!window.moment) {
+			console.error('Granola Sync: moment.js not available for date formatting');
+			return null;
+		}
+
+		try {
+			// Replace {{token}} or {token} patterns with moment.js formatting
+			let path = this.settings.periodicNotePath;
+			const tokenPattern = /\{\{?([^}]+)\}\}?/g;
+
+			path = path.replace(tokenPattern, (match, token) => {
+				return window.moment(date).format(token);
+			});
+
+			// Ensure .md extension
+			if (!path.endsWith('.md')) {
+				path += '.md';
+			}
+
+			return path;
+		} catch (error) {
+			console.error('Error resolving periodic note path pattern:', error);
+			return null;
+		}
 	}
 
 	generateNoteTitle(doc) {
@@ -1162,28 +1226,40 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 
 	async getDailyNote() {
 		try {
-			// Try to get today's daily note using a simpler approach
 			const today = new Date();
+
+			// Try using configured path pattern first
+			const configuredPath = this.resolveDailyNotePath(today);
+			if (configuredPath) {
+				const file = this.app.vault.getAbstractFileByPath(configuredPath);
+				if (file) {
+					return file;
+				}
+				// Log that configured path didn't find a file, will fall back
+				console.log('Granola Sync: Daily note not found at configured path:', configuredPath, '- falling back to heuristic search');
+			}
+
+			// Fall back to heuristic search
 			const todayFormatted = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-			
+
 			// Generate various date formats to search for
 			const year = today.getFullYear();
 			const month = String(today.getMonth() + 1).padStart(2, '0');
 			const day = String(today.getDate()).padStart(2, '0');
-			
+
 			// Common date formats in daily notes
 			const searchFormats = [
 				`${day}-${month}-${year}`, // DD-MM-YYYY
-				`${year}-${month}-${day}`, // YYYY-MM-DD  
+				`${year}-${month}-${day}`, // YYYY-MM-DD
 				`${month}-${day}-${year}`, // MM-DD-YYYY
 				`${day}.${month}.${year}`, // DD.MM.YYYY
 				`${year}/${month}/${day}`, // YYYY/MM/DD
 				`${day}/${month}/${year}`, // DD/MM/YYYY
 			];
-			
+
 			// Search through all files in the vault to find today's daily note
 			const files = this.app.vault.getMarkdownFiles();
-			
+
 			for (const file of files) {
 				// Check if this file is in the daily notes structure and matches any of today's date formats
 				if (file.path.includes('Daily')) {
@@ -1194,7 +1270,7 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 					}
 				}
 			}
-			
+
 			return null;
 		} catch (error) {
 			console.error('Error getting daily note:', error);
@@ -1212,16 +1288,25 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 				return null;
 			}
 
-			// Since the Periodic Notes API is not accessible, let's try a different approach
-			// Let's try to find the daily note directly by looking for it in the vault
-			
-			// Get today's date
 			const today = new Date();
+
+			// Try using configured path pattern first
+			const configuredPath = this.resolvePeriodicNotePath(today);
+			if (configuredPath) {
+				const file = this.app.vault.getAbstractFileByPath(configuredPath);
+				if (file) {
+					return file;
+				}
+				// Log that configured path didn't find a file, will fall back
+				console.log('Granola Sync: Periodic note not found at configured path:', configuredPath, '- falling back to heuristic search');
+			}
+
+			// Fall back to heuristic search
 			const todayFormatted = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-			
+
 			// Search for today's daily note in the vault
 			const files = this.app.vault.getMarkdownFiles();
-			
+
 			// Look for files that might be today's daily note
 			// Priority order: exact date match, then files in Daily Notes folder, then any file with today's date
 			const possibleDailyNotes = files.filter(file => {
@@ -1234,31 +1319,31 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 					return true;
 				}
 				// Third priority: any file with today's date
-				return file.name.includes(todayFormatted) || 
+				return file.name.includes(todayFormatted) ||
 					   file.path.includes(todayFormatted) ||
 					   file.name.includes(today.toDateString().split(' ')[2]) || // Day of month
 					   file.name.includes(today.getDate().toString());
 			});
-			
+
 			// Sort by priority: exact date match first, then Daily Notes folder, then others
 			possibleDailyNotes.sort((a, b) => {
 				// Exact date match gets highest priority
 				if (a.name === todayFormatted + '.md' || a.name === todayFormatted) return -1;
 				if (b.name === todayFormatted + '.md' || b.name === todayFormatted) return 1;
-				
+
 				// Daily Notes folder gets second priority
 				if (a.path.includes('Daily') && !b.path.includes('Daily')) return -1;
 				if (b.path.includes('Daily') && !a.path.includes('Daily')) return 1;
-				
+
 				// Otherwise maintain original order
 				return 0;
 			});
-			
+
 			// Return the first match
 			if (possibleDailyNotes.length > 0) {
 				return possibleDailyNotes[0];
 			}
-			
+
 			return null;
 		} catch (error) {
 			console.error('Error getting periodic note:', error);
@@ -1825,6 +1910,19 @@ class GranolaSyncSettingTab extends obsidian.PluginSettingTab {
 				});
 			});
 
+		new obsidian.Setting(containerEl)
+			.setName('Daily note path pattern')
+			.setDesc('Optional: Specify exact path pattern to your daily notes using moment.js tokens (YYYY, MM, DD, dd for day-of-week, etc.). Leave empty to use automatic detection.')
+			.addText(text => {
+				text.setPlaceholder('_Inbox/daily/{{YYYY-MM-DD-dd}}');
+				text.setValue(this.plugin.settings.dailyNotePath);
+				text.inputEl.style.fontFamily = 'monospace';
+				text.onChange(async (value) => {
+					this.plugin.settings.dailyNotePath = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
 		// Create a heading for periodic note integration
 		containerEl.createEl('h3', {text: 'Periodic note integration'});
 
@@ -1857,6 +1955,19 @@ class GranolaSyncSettingTab extends obsidian.PluginSettingTab {
 				text.setValue(this.plugin.settings.periodicNoteSectionName);
 				text.onChange(async (value) => {
 					this.plugin.settings.periodicNoteSectionName = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		new obsidian.Setting(containerEl)
+			.setName('Periodic note path pattern')
+			.setDesc('Optional: Specify exact path pattern to your periodic notes using moment.js tokens (YYYY, MM, DD, dd for day-of-week, etc.). Leave empty to use automatic detection.')
+			.addText(text => {
+				text.setPlaceholder('_Inbox/daily/{{YYYY-MM-DD-dd}}');
+				text.setValue(this.plugin.settings.periodicNotePath);
+				text.inputEl.style.fontFamily = 'monospace';
+				text.onChange(async (value) => {
+					this.plugin.settings.periodicNotePath = value;
 					await this.plugin.saveSettings();
 				});
 			});

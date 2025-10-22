@@ -113,14 +113,53 @@ The plugin supports two independent organization modes:
 
 This allows users to move notes around the vault without creating duplicates.
 
+### Path Pattern Resolution (v1.6.4+)
+
+The plugin supports configurable path patterns for locating daily and periodic notes using moment.js tokens.
+
+**Path Pattern Settings**:
+- `dailyNotePath`: Path pattern for daily notes (default: empty string for heuristic fallback)
+- `periodicNotePath`: Path pattern for periodic notes (default: empty string for heuristic fallback)
+
+**Supported Token Syntax**:
+- Double braces: `{{YYYY-MM-DD-dd}}` (recommended)
+- Single braces: `{YYYY-MM-DD-dd}` (also supported)
+
+**Common moment.js tokens**:
+- `YYYY` - 4-digit year (2025)
+- `MM` - 2-digit month (01-12)
+- `DD` - 2-digit day (01-31)
+- `dd` - 2-character day of week (Mo, Tu, We, Th, Fr, Sa, Su)
+- `ddd` - 3-character day of week (Mon, Tue, Wed, etc.)
+- `MMMM` - Full month name (October)
+- `D` - Day without leading zero (1-31)
+
+**Example patterns**:
+- `_Inbox/daily/{{YYYY-MM-DD-dd}}` → `_Inbox/daily/2025-10-22-We.md`
+- `Daily Notes/{{YYYY}}/{{MM}}/{{DD}}` → `Daily Notes/2025/10/22.md`
+- `Journal/{{MMMM}} {{D}}, {{YYYY}}` → `Journal/October 22, 2025.md`
+
+**Implementation details**:
+- Path resolution methods: `resolveDailyNotePath()` and `resolvePeriodicNotePath()` (lines 594-654)
+- Uses `window.moment(date).format()` for token replacement
+- Automatically appends `.md` extension if missing
+- Returns `null` if pattern is empty or moment.js is unavailable, triggering fallback to heuristic search
+- Logs informational message to console when falling back
+
 ### Daily Notes & Periodic Notes Integration
 
-**Daily Notes** (lines 1042-1095, 1152-1192):
-- Searches for daily note using date-based heuristics (multiple formats supported)
+**Daily Notes** (lines 1227-1279):
+- **Configurable path pattern** (v1.6.4+): Uses `dailyNotePath` setting with moment.js tokens if configured
+- Falls back to date-based heuristics (multiple formats supported) if path is not configured
+- Path resolution via `resolveDailyNotePath()` method (lines 594-623)
+- Supports patterns like `_Inbox/daily/{{YYYY-MM-DD-dd}}` → `_Inbox/daily/2025-10-22-We.md`
 - Updates "## Granola Meetings" section with meeting links and times
 - Format: `- HH:MM [[filepath|title]]`
 
-**Periodic Notes** (lines 1097-1256):
+**Periodic Notes** (lines 1285-1352):
+- **Configurable path pattern** (v1.6.4+): Uses `periodicNotePath` setting with moment.js tokens if configured
+- Falls back to heuristics if not configured
+- Path resolution via `resolvePeriodicNotePath()` method (lines 625-654)
 - Detects if Periodic Notes plugin is available
 - Uses similar logic to Daily Notes with separate section heading
 - Can be enabled independently from Daily Notes
@@ -191,6 +230,8 @@ Both integrations:
 - `includeAttendeeTags`, `includeFolderTags`, `includeGranolaUrl`: Metadata options
 - `existingNoteSearchScope`: Experimental search scope configuration
 - `enableDateBasedFolders`, `enableGranolaFolders`: Organization modes
+- `dailyNotePath`: Optional path pattern for daily notes using moment.js tokens (e.g., `_Inbox/daily/{{YYYY-MM-DD-dd}}`)
+- `periodicNotePath`: Optional path pattern for periodic notes using moment.js tokens
 - Integration toggles for Daily Notes and Periodic Notes
 
 Settings are:
@@ -219,13 +260,15 @@ Settings are:
 | Credential loading | 318-374 |
 | API calls | 376-462 |
 | Content conversion | 464-563 |
-| File organization | 636-684 |
-| Deduplication | 686-842 |
-| Document processing | 844-1029 |
-| Daily Notes integration | 1042-1095, 1152-1192 |
-| Periodic Notes integration | 1097-1256 |
-| Metadata generation | 1326-1496 |
-| Settings UI | 1505-1991 |
+| Date formatting | 565-593 |
+| Path pattern resolution | 594-654 |
+| File organization | 656-715 |
+| Deduplication | 717-873 |
+| Document processing | 875-1060 |
+| Daily Notes integration | 1227-1279 |
+| Periodic Notes integration | 1285-1352 |
+| Metadata generation | 1357-1527 |
+| Settings UI | 1536-2022 |
 
 ## Important Patterns
 
