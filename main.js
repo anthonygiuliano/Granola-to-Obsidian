@@ -653,6 +653,40 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 		}
 	}
 
+	resolveSyncDirectory(doc) {
+		if (!this.settings.syncDirectory || this.settings.syncDirectory.trim() === '') {
+			return 'Granola'; // Default fallback
+		}
+
+		if (!window.moment) {
+			console.log('Granola Sync: moment.js not available. Using static sync directory path.');
+			return this.settings.syncDirectory;
+		}
+
+		try {
+			// Replace {{token}} or {token} patterns with moment.js formatting
+			let directory = this.settings.syncDirectory;
+			const tokenPattern = /\{\{?([^}]+)\}\}?/g;
+
+			// Use document's created_at date, or fallback to current date
+			const dateToUse = doc && doc.created_at ? new Date(doc.created_at) : new Date();
+
+			// Inform user if falling back to current date
+			if (!doc || !doc.created_at) {
+				console.log('Granola Sync: No creation date provided. Using current date for sync directory path.');
+			}
+
+			directory = directory.replace(tokenPattern, (match, token) => {
+				return window.moment(dateToUse).format(token);
+			});
+
+			return directory;
+		} catch (error) {
+			console.error('Error resolving sync directory pattern:', error);
+			return this.settings.syncDirectory || 'Granola';
+		}
+	}
+
 	generateNoteTitle(doc) {
 		const title = doc.title || 'Untitled Granola Note';
 		// Clean the title for use as a heading - remove invalid characters but keep spaces
@@ -704,22 +738,23 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 	}
 
 	generateDateBasedPath(doc) {
-		if (!this.settings.enableDateBasedFolders || !doc.created_at) {
-			return this.settings.syncDirectory;
+		if (!this.settings.enableDateBasedFolders) {
+			return this.resolveSyncDirectory(doc);
 		}
 
 		const dateFolder = this.formatDate(doc.created_at, this.settings.dateFolderFormat);
-		return path.join(this.settings.syncDirectory, dateFolder);
+		const baseDirectory = this.resolveSyncDirectory(doc);
+		return path.join(baseDirectory, dateFolder);
 	}
 
 	generateFolderBasedPath(doc) {
 		if (!this.settings.enableGranolaFolders || !this.documentToFolderMap) {
-			return this.settings.syncDirectory;
+			return this.resolveSyncDirectory(doc);
 		}
 
 		const folder = this.documentToFolderMap[doc.id];
 		if (!folder || !folder.title) {
-			return this.settings.syncDirectory;
+			return this.resolveSyncDirectory(doc);
 		}
 
 		// Clean folder name for filesystem use
@@ -728,7 +763,8 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 			.replace(/\s+/g, '_') // Replace spaces with underscores
 			.trim();
 
-		return path.join(this.settings.syncDirectory, cleanFolderName);
+		const baseDirectory = this.resolveSyncDirectory(doc);
+		return path.join(baseDirectory, cleanFolderName);
 	}
 
 	async ensureDateBasedDirectoryExists(datePath) {
@@ -787,12 +823,22 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 				}
 			}
 		} else {
-			// Default: search only in sync directory (including subdirectories)
-			const folder = this.app.vault.getFolderByPath(this.settings.syncDirectory);
-			if (!folder) {
+			// Default: search only in sync directory with dynamic token resolution
+			try {
+				const sampleDoc = { created_at: new Date().toISOString() };
+				const syncDirectoryPath = this.resolveSyncDirectory(sampleDoc);
+				const folder = this.app.vault.getFolderByPath(syncDirectoryPath);
+
+				if (!folder) {
+					console.log('Granola Sync: No sync directory found with current tokens.');
+					return null;
+				}
+
+				filesToSearch = this.getAllMarkdownFilesInFolder(folder);
+			} catch (error) {
+				console.error('Error resolving sync directory for search:', error);
 				return null;
 			}
-			filesToSearch = this.getAllMarkdownFilesInFolder(folder);
 		}
 		
 		for (const file of filesToSearch) {
@@ -1105,9 +1151,13 @@ class GranolaSyncPlugin extends obsidian.Plugin {
 
 	async ensureDirectoryExists() {
 		try {
-			const folder = this.app.vault.getFolderByPath(this.settings.syncDirectory);
+			// Use a sample note to resolve the sync directory path (current date will be used if no doc)
+			const sampleDoc = { created_at: new Date().toISOString() };
+			const syncPath = this.resolveSyncDirectory(sampleDoc);
+
+			const folder = this.app.vault.getFolderByPath(syncPath);
 			if (!folder) {
-				await this.app.vault.createFolder(this.settings.syncDirectory);
+				await this.app.vault.createFolder(syncPath);
 			}
 		} catch (error) {
 			console.error('Error creating directory:', error);
@@ -2040,7 +2090,7 @@ class GranolaSyncSettingTab extends obsidian.PluginSettingTab {
 
 		new obsidian.Setting(containerEl)
 			.setName('Sync directory')
-			.setDesc('Directory within your vault where Granola notes will be synced')
+			.setDesc('Directory within your vault where Granola notes will be synced. Supports moment.js tokens for date-based paths, such as "{{YYYY}}/Granola", "Meetings/{{YYYY-MM}}", or "{{YYYY}}/{{MM}}/Meetings".\n\nTokens are resolved using each note\'s creation date, with fallback to the current date. Static paths like "Granola" are also supported.')
 			.addText(text => {
 				text.setPlaceholder('Granola');
 				text.setValue(this.plugin.settings.syncDirectory);

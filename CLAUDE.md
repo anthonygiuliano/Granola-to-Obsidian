@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Granola Sync is an Obsidian plugin (v1.6.3) that syncs meeting notes from Granola AI to Obsidian vaults. It's a **single-file plugin** (main.js, ~2000 lines) that communicates with the Granola API using locally stored authentication credentials.
+Granola Sync is an Obsidian plugin (v1.6.5) that syncs meeting notes from Granola AI to Obsidian vaults. It's a **single-file plugin** (main.js, ~2000 lines) that communicates with the Granola API using locally stored authentication credentials.
 
 **Key characteristics:**
 - Desktop-only Obsidian plugin (requires Obsidian v1.6.6+)
@@ -103,6 +103,16 @@ The plugin supports two independent organization modes:
 - Maps documents to folders using `documentToFolderMap`
 - Enabled with `enableGranolaFolders`
 
+**Sync Directory Token Resolution** (v1.6.5+):
+- Supports dynamic path generation using moment.js tokens
+- Token resolution uses the document's `created_at` timestamp
+- Falls back to current date if `created_at` is missing
+- Tokens processed by `resolveSyncDirectoryPath()` method
+- Can be combined with date-based folders and Granola folders
+- Example: `{{YYYY}}/Granola` for year-based subfolder organization
+- Fallback to static path if moment.js is unavailable
+- Allows flexible, time-based note organization strategies
+
 ### Deduplication & Search Scopes
 
 **Experimental feature** (lines 686-842): Configurable search scope for finding existing notes by `granola_id`:
@@ -118,6 +128,7 @@ This allows users to move notes around the vault without creating duplicates.
 The plugin supports configurable path patterns for locating daily and periodic notes using moment.js tokens.
 
 **Path Pattern Settings**:
+- `syncDirectory`: Target folder in vault with support for moment.js tokens
 - `dailyNotePath`: Path pattern for daily notes (default: empty string for heuristic fallback)
 - `periodicNotePath`: Path pattern for periodic notes (default: empty string for heuristic fallback)
 
@@ -138,10 +149,13 @@ The plugin supports configurable path patterns for locating daily and periodic n
 - `_Inbox/daily/{{YYYY-MM-DD-dd}}` → `_Inbox/daily/2025-10-22-We.md`
 - `Daily Notes/{{YYYY}}/{{MM}}/{{DD}}` → `Daily Notes/2025/10/22.md`
 - `Journal/{{MMMM}} {{D}}, {{YYYY}}` → `Journal/October 22, 2025.md`
+- `{{YYYY}}/Granola` → `2025/Granola`
 
 **Implementation details**:
-- Path resolution methods: `resolveDailyNotePath()` and `resolvePeriodicNotePath()` (lines 594-654)
+- Path resolution methods: `resolveDailyNotePath()`, `resolvePeriodicNotePath()`, and `resolveSyncDirectoryPath()` (lines 594-688)
 - Uses `window.moment(date).format()` for token replacement
+- Token resolution uses document's `created_at` timestamp
+- Falls back to current date if `created_at` is missing
 - Automatically appends `.md` extension if missing
 - Returns `null` if pattern is empty or moment.js is unavailable, triggering fallback to heuristic search
 - Logs informational message to console when falling back
@@ -222,7 +236,7 @@ Both integrations:
 ## Settings Architecture
 
 **Default settings** (lines 16-40) include:
-- `syncDirectory`: Target folder in vault
+- `syncDirectory`: Target folder in vault. Supports moment.js tokens for dynamic date-based paths (e.g., `{{YYYY}}/Granola`)
 - `filenameTemplate`: Template with variables like `{title}`, `{created_date}`, `{id}`
 - `dateFormat`: Custom format using tokens (YYYY, MM, DD, HH, mm, ss)
 - `autoSyncFrequency`: Interval in milliseconds (or 0 for disabled)
@@ -261,8 +275,8 @@ Settings are:
 | API calls | 376-462 |
 | Content conversion | 464-563 |
 | Date formatting | 565-593 |
-| Path pattern resolution | 594-654 |
-| File organization | 656-715 |
+| Path pattern resolution | 594-688 |
+| File organization | 689-746 |
 | Deduplication | 717-873 |
 | Document processing | 875-1060 |
 | Daily Notes integration | 1227-1279 |
